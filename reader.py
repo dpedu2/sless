@@ -125,7 +125,7 @@ class JsonObject(urwid.Pile):
         if not self.is_hidden:
             key = super(JsonObject, self).keypress(size, key)
 
-        logging.info('JsonObject('+ str(self.print_key) +'): ' + str(key))
+        #logging.info('JsonObject('+ str(self.print_key) +'): ' + str(key))
         if key == ' ':
             if self.can_hide():
                 self.toggleHidden()
@@ -141,6 +141,44 @@ class JsonObject(urwid.Pile):
 
         return key
 
+
+class LazyFocusListWalker(urwid.SimpleFocusListWalker):
+    """
+    Similar to SimpleFocusListWalker but lazy-loads contents
+    """
+    def __init__(self, initial_content, above=None, below=None):
+        """
+        Above and below both default to len(initial_content)
+        :param initial_content: Initial set of content to show
+        :param above: number of items to keep loaded above the focused item
+        :param below: number of items to keep loaded above the focused item
+        """
+
+        self.above = above if above else len(initial_content)
+        self.below = above if above else len(initial_content)
+
+        super(LazyFocusListWalker, self).__init__(initial_content)
+
+    def next_position(self, position):
+        logging.info("LazyFocusListWalker.next_position: {}".format(position))
+        return super(LazyFocusListWalker, self).next_position(position)
+
+    def prev_position(self, position):
+        logging.info("LazyFocusListWalker.prev_position: {}".format(position))
+        return super(LazyFocusListWalker, self).prev_position(position)
+
+    def set_focus(self, position):
+        logging.info("LazyFocusListWalker.set_focus: {}".format(position))
+        #self.focus = position
+        # seems we can insert/remove items here without upsetting the listbox
+        # ensure that at least $TERMINAL_HEIGHT items are loaded above and below the select item
+        # also, decrement self.focus the same number of items removed from the beginning
+        #self.insert(0, urwid.Text('hello'))
+        if position > 70:
+            self.pop(0)
+            position -= 1
+
+        super(LazyFocusListWalker, self).set_focus(position)
 
 
 class JsonFileDisplay(urwid.ListBox):
@@ -160,17 +198,17 @@ class JsonFileDisplay(urwid.ListBox):
                 )
             )
 
-        super(JsonFileDisplay, self).__init__(urwid.SimpleFocusListWalker(body))
+        super(JsonFileDisplay, self).__init__(LazyFocusListWalker(body))
 
 
     def next_line(self):
         self.current_line += 1
         return json.loads(self.file.readline())
 
-    def keypress(self, size, key):
-        result = super(JsonFileDisplay, self).keypress(size, key)
-        logging.info('JsonFileDisplay: ' + key + '->' + str(result))
-        return result
+#    def keypress(self, size, key):
+#        result = super(JsonFileDisplay, self).keypress(size, key)
+#        logging.info('JsonFileDisplay: ' + key + '->' + str(result))
+#        return result
 #        key = super(JsonListBox, self).keypress(size, key)
 #        if key != 'enter':
 #            return key
@@ -188,35 +226,72 @@ class JsonFileDisplay(urwid.ListBox):
 #            self.body.pop(0)
 #            logging.info("popped")
 
-header_buttons = [
-    ('fixed', 13, urwid.Button("(F1) Help")),
-    ('fixed', 13, urwid.Button("(F2) Load")),
-    ('fixed', 15, urwid.Button("(F3) Export")),
-    ('fixed', 15, urwid.Button("(F4) Filter")),
-    ('fixed', 13, urwid.Button("(F5) Exit")),
-]
 
-_navColumns = urwid.Columns(header_buttons, dividechars=3, focus_column=None, min_width=1, box_columns=None)
+class JsonReader(object):
+    def __init__(self, file_path):
+        self.file_path = file_path
 
-navColumns = urwid.AttrMap(_navColumns, 'header')
+        palette = [
+            ('I say', 'default,bold', 'default'),
+            ('header', 'black', 'light green'),
+            ('row_odd', 'white', 'dark gray'),
 
-mainFrame = urwid.Frame(JsonFileDisplay('./query_api_server.log.20160527T012105'), header=navColumns, footer=None, focus_part='body')
+            ('json_row', 'dark gray', 'black'),
+            ('json_row_h', 'white', 'black')
+            #('json_row_h', 'light gray', 'dark blue', 'standout','#ff8', '#806')
+            #('json_row_h', 'white', 'dark gray', '','#f0f', '#00f')
+        ]
+
+        header_buttons = [
+            ('fixed', 13, urwid.Button("F1 Help")),
+            ('fixed', 13, urwid.Button("F2 Load")),
+            ('fixed', 15, urwid.Button("F3 Export")),
+            ('fixed', 15, urwid.Button("F4 Filter")),
+            ('fixed', 15, urwid.Button("F5 Reload")),
+            ('fixed', 13, urwid.Button("F8 Exit")),
+        ]
+
+        _navColumns = urwid.Columns(header_buttons, dividechars=3, focus_column=None, min_width=1, box_columns=None)
+
+        navColumns = urwid.AttrMap(_navColumns, 'header')
+
+        mainFrame = urwid.Frame(JsonFileDisplay(self.file_path), header=navColumns, footer=None, focus_part='body')
+
+        screen = urwid.raw_display.Screen()
+        screen.set_terminal_properties(colors=256) # <-- not working?
+        screen.register_palette(palette)
+        self.loop = urwid.MainLoop(mainFrame, palette, unhandled_input=self.unhandled)
+
+    def unhandled(self, key):
+        if key in ['f8', 'q']:
+            raise urwid.ExitMainLoop()
+        elif key in ['f1', 'h']:
+            pass # show help
+        elif key in ['f2', 'l']:
+            pass # load ?
+        elif key in ['f3', 'e']:
+            pass # export
+        elif key in ['f4', 'f']:
+            pass # filter
+        elif key in ['f5', 'r']:
+            pass # reload file from disk (?)
+
+    def run(self):
+        try:
+            self.loop.run()
+        except KeyboardInterrupt as e:
+            pass
+
+def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="Graphical json structured log explorer")
+    parser.add_argument('file_path', nargs=1, help="File path to view")
+
+    args = parser.parse_args()
+
+    reader = JsonReader(args.file_path[0])
+    reader.run()
 
 
-palette = [
-    ('I say', 'default,bold', 'default'),
-    ('header', 'black', 'light green'),
-    ('row_odd', 'white', 'dark gray'),
-
-    ('json_row', 'dark gray', 'black'),
-    ('json_row_h', 'white', 'black')
-    #('json_row_h', 'light gray', 'dark blue', 'standout','#ff8', '#806')
-    #('json_row_h', 'white', 'dark gray', '','#f0f', '#00f')
-]
-
-screen = urwid.raw_display.Screen()
-screen.set_terminal_properties(colors=256)
-screen.register_palette(palette)
-
-loop = urwid.MainLoop(mainFrame, palette)
-loop.run()
+if __name__ == '__main__':
+    main()
