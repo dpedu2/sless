@@ -1,5 +1,10 @@
-import json
+try:
+    import ujson as json
+except:
+    import json
 from gzip import GzipFile
+import pdb
+
 
 class LazyJsonReader(object):
 
@@ -17,6 +22,20 @@ class LazyJsonReader(object):
         """
         self.line = 0
 
+    def _get_position(self):
+        """
+        Return set of (current_line, current_file_position)
+        """
+        return (self.line, self.file.tell())
+
+    def _seek_to(self, line, pos):
+        """
+        Seek to arbitrary locations. There's no logic here, this method assumes the line number and position specified
+        are correct.
+        """
+        self.line = line
+        self.file.seek(pos)
+
     def decode(self, s):
         return s.decode('UTF-8')
 
@@ -24,10 +43,13 @@ class LazyJsonReader(object):
         """
         Read the next line from the file, parse and return. Returns None if out of lines.
         """
-        data = self.file.readline()
+        data = self.file.readline().strip()
         if data:
             self.line += 1
-        return json.loads(self.decode(data)) if data else None
+        try:
+            return json.loads(self.decode(data)) if data else None
+        except:
+            pdb.set_trace()
 
     def read_prev(self):
         """
@@ -44,7 +66,7 @@ class LazyJsonReader(object):
         # then split n grab
         #print(current_pos)
         rewound_chunk = b""
-        while rewound_chunk.count(b"\n") < 3:
+        while rewound_chunk.count(b"\n") < 2:
             before_jump = current_pos
 
             # Jump backwards x bytes, and prevent falling off the start
@@ -87,15 +109,15 @@ def test():
     import pdb
     from time import time
 
-    reader = LazyJsonReader("./query_api_server.log.20160527t012105.gz", file_gzipped=True)
+    #reader = LazyJsonReader("./query_api_server.log.20160527t012105.gz", file_gzipped=True)
     #reader = LazyJsonReader("./query_api_server.log.20160527t012105")
     #reader = LazyJsonReader("./test.json.gz", file_gzipped=True)
-    #reader = LazyJsonReader("./test.json")
+    reader = LazyJsonReader("./test.json")
 
     #print(">>>", reader.read_next())
     #print(">>>", reader.read_prev())
 
-    #pdb.set_trace()
+    pdb.set_trace()
 
     burn_lines = 5000
     last_line = None

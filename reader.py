@@ -2,8 +2,10 @@
 
 import logging
 logging.basicConfig(filename='test.log',level=logging.DEBUG)
-import json
 import urwid
+from lazyjson import LazyJsonReader
+from threading import Thread
+from time import sleep
 
 
 class JsonBox(urwid.Edit):
@@ -22,8 +24,16 @@ class JsonObject(urwid.Pile):
     """
     A pile that can be collapsed to a single row aka "hidden". these are nested for sub-objects
     """
-    def __init__(self, json_object, preview_keys=['_t', 'severity', 'event_name'], print_key=None, hidden=False):
+    def __init__(self, json_object, preview_keys=['_t', 'severity', 'event_name', '__time__'], print_key=None, hidden=False, meta=None):
+        """
+        :param json_object: object to display
+        :param preview_keys: keys to show when object is collasped
+        :param print_key: when nesting, print a key before this object
+        :param hidden: true if object is collapsed by default
+        :param meta: arbitrary data to store in this object
+        """
         super(JsonObject, self).__init__([])
+        self.meta = meta
         self.json = json_object
         self.print_key = print_key
 
@@ -77,10 +87,6 @@ class JsonObject(urwid.Pile):
             widgets.append(JsonBox(
                 '{}: {},'.format(print_key, str_value) if print_key else '{},'.format(str(str_value))
             ))
-
-
-
-
 
         if type(self.json) is dict:
             widgets.append(urwid.AttrMap(
@@ -141,90 +147,157 @@ class JsonObject(urwid.Pile):
 
         return key
 
+    #def mouse_event(self, size, event, button, col, row, focus):
+    #    logging.info("Mouse {} on {}".format(event, id(self)))
+    #    return super(JsonObject, self).mouse_event(size, event, button, col, row, focus)
+
+
+class AsyncLineLoader(Thread):
+    def __init__(self, parent):
+        super(AsyncLineLoader, self).__init__()
+        self.parent = parent
+        self.start()
+
+    def run(self):
+        """
+        Monitors when we need to read more items from disk and add to the top or bottom
+        """
+        while True:
+            sleep(0.1)
+            self.parent.insert_items()
+
+
 
 class LazyFocusListWalker(urwid.SimpleFocusListWalker):
     """
     Similar to SimpleFocusListWalker but lazy-loads contents
     """
-    def __init__(self, initial_content, above=None, below=None):
+    def __init__(self, initial_content, file_display):
         """
-        Above and below both default to len(initial_content)
         :param initial_content: Initial set of content to show
-        :param above: number of items to keep loaded above the focused item
-        :param below: number of items to keep loaded above the focused item
+        :param file_display: parent JsonFileDisplay object
         """
 
-        self.above = above if above else len(initial_content)
-        self.below = above if above else len(initial_content)
+        #self.above = above if above else len(initial_content)
+        #self.below = above if above else len(initial_content)
+
+        self.parent = file_display
+        self.async_loader = AsyncLineLoader(self)
 
         super(LazyFocusListWalker, self).__init__(initial_content)
 
-    def next_position(self, position):
-        logging.info("LazyFocusListWalker.next_position: {}".format(position))
-        return super(LazyFocusListWalker, self).next_position(position)
+    #def next_position(self, position):
+    #    logging.info("LazyFocusListWalker.next_position: {}".format(position))
+    #    return super(LazyFocusListWalker, self).next_position(position)
 
-    def prev_position(self, position):
-        logging.info("LazyFocusListWalker.prev_position: {}".format(position))
-        return super(LazyFocusListWalker, self).prev_position(position)
+    #def prev_position(self, position):
+    #    logging.info("LazyFocusListWalker.prev_position: {}".format(position))
+    #    return super(LazyFocusListWalker, self).prev_position(position)
+
+    def insert_items(self):
+        count_above = self.focus
+        count_below = len(self)-self.focus
+        #logging.info("Total: {}, reader @ {}".format(len(self), self.parent.reader.line))
+        # Add to bottom if needed
+        while count_below < self.parent.num_lines:
+            #logging.info("add to bottom")
+            # Seek to last item
+            self.parent.reader._seek_to(*self[-1]._original_widget.meta)
+            # Read next
+            next_item = self.parent.reader.read_next()
+            reader_position = self.parent.reader._get_position()
+            # Add next item to self
+            if next_item is not None:
+                self.append(
+                    self.parent.build_item(
+                        next_item,
+                        reader_position
+                    )
+                )
+                count_below = len(self)-self.focus
+            else:
+                break
+
+        # Add to top if needed
+        while self[0]._original_widget.meta[0] > 1 and count_above < self.parent.num_lines:
+            # Seek to first item
+            self.parent.reader._seek_to(*self[0]._original_widget.meta)
+            # Read prev
+            next_item = self.parent.reader.read_prev()
+            reader_position = self.parent.reader._get_position()
+            # Add next item to self
+            #logging.info(self.parent.reader.line)
+            if next_item is not None:
+                logging.info("did add to top")
+                logging.info(self[0]._original_widget.meta)
+                #import pdb ; pdb.set_trace()
+                self.insert(
+                    0,
+                    self.parent.build_item(
+                        next_item,
+                        reader_position
+                    )
+                )
+                #position += 1
+                count_above = self.focus
+            else:
+                break
 
     def set_focus(self, position):
-        logging.info("LazyFocusListWalker.set_focus: {}".format(position))
+        #logging.info("LazyFocusListWalker.set_focus: {}".format(position))
         #self.focus = position
         # seems we can insert/remove items here without upsetting the listbox
         # ensure that at least $TERMINAL_HEIGHT items are loaded above and below the select item
         # also, decrement self.focus the same number of items removed from the beginning
         #self.insert(0, urwid.Text('hello'))
-        if position > 70:
+
+
+        count_above = position
+        count_below = len(self)-position
+        #logging.info("Buffers - below: {}, above: {}".format(count_below, count_above))
+
+        # Trim from bottom if needed
+        while count_below > self.parent.num_lines:
+            self.pop()
+            count_below = len(self)-position
+
+        # Trim from top if needed
+        while count_above > self.parent.num_lines:
+            #import pdb ; pdb.set_trace()
             self.pop(0)
             position -= 1
+            count_above = position
 
         super(LazyFocusListWalker, self).set_focus(position)
 
 
 class JsonFileDisplay(urwid.ListBox):
     def __init__(self, json_file):
-        self.file = open(json_file, 'r')
-        self.current_line = 0
+        self.reader = LazyJsonReader(json_file)
+
+        # maximum number of loaded lines above AND below the cursor
+        # TODO height of window / 2
         self.num_lines = 100
 
         body = []
         for i in range(0, self.num_lines):
+            next_ob = self.reader.read_next()
+            reader_position = self.reader._get_position()
+            if next_ob is None:
+                break
             body.append(
-                urwid.AttrMap(
-                    JsonObject(self.next_line(), hidden=True),
-                #    'row_odd' if self.current_line % 2 == 0 else 'row_even'
-                     'json_row',
-                     'json_row_h'
-                )
+                self.build_item(next_ob, reader_position)
             )
 
-        super(JsonFileDisplay, self).__init__(LazyFocusListWalker(body))
+        super(JsonFileDisplay, self).__init__(LazyFocusListWalker(body, self))
 
 
-    def next_line(self):
-        self.current_line += 1
-        return json.loads(self.file.readline())
-
-#    def keypress(self, size, key):
-#        result = super(JsonFileDisplay, self).keypress(size, key)
-#        logging.info('JsonFileDisplay: ' + key + '->' + str(result))
-#        return result
-#        key = super(JsonListBox, self).keypress(size, key)
-#        if key != 'enter':
-#            return key
-#        name = self.focus[0].edit_text
-#        if not name:
-#            raise urwid.ExitMainLoop()
-#        # replace or add response
-#        self.focus.contents[1:] = [(answer(name), self.focus.options())]
-#        pos = self.focus_position
-#        # add a new question
-#        self.body.insert(pos + 1, question())
-#        self.focus_position = pos + 1
-#
-#        if len(self.body) > 20:
-#            self.body.pop(0)
-#            logging.info("popped")
+    def build_item(self, ob, meta):
+        return urwid.AttrMap(
+                    JsonObject(ob, meta=meta, hidden=True),
+                    'json_row',
+                    'json_row_h'
+                )
 
 
 class JsonReader(object):
@@ -255,7 +328,8 @@ class JsonReader(object):
 
         navColumns = urwid.AttrMap(_navColumns, 'header')
 
-        mainFrame = urwid.Frame(JsonFileDisplay(self.file_path), header=navColumns, footer=None, focus_part='body')
+        self.main_display = JsonFileDisplay(self.file_path)
+        mainFrame = urwid.Frame(self.main_display, header=navColumns, footer=None, focus_part='body')
 
         screen = urwid.raw_display.Screen()
         screen.set_terminal_properties(colors=256) # <-- not working?
@@ -276,11 +350,14 @@ class JsonReader(object):
         elif key in ['f5', 'r']:
             pass # reload file from disk (?)
 
+    def teardown(self):
+        self.
+
     def run(self):
         try:
             self.loop.run()
         except KeyboardInterrupt as e:
-            pass
+            self.teardown()
 
 def main():
     import argparse
