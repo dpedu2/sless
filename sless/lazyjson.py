@@ -4,11 +4,12 @@ except:
     import json
 from gzip import GzipFile
 import pdb
+import logging
 
 
 class LazyJsonReader(object):
 
-    chunk_size = 8192
+    chunk_size = 2048
 
     """Newline-separated json log reader tolerating massive log files"""
     def __init__(self, file_path, file_gzipped=False):
@@ -49,6 +50,7 @@ class LazyJsonReader(object):
         try:
             return json.loads(self.decode(data)) if data else None
         except:
+            logging.info("Bad line: {}".format(data))
             pdb.set_trace()
 
     def read_prev(self):
@@ -66,7 +68,7 @@ class LazyJsonReader(object):
         # then split n grab
         #print(current_pos)
         rewound_chunk = b""
-        while rewound_chunk.count(b"\n") < 2:
+        while rewound_chunk.count(b"\n") < 3: # changed from 2 to 3 to fix partial reads
             before_jump = current_pos
 
             # Jump backwards x bytes, and prevent falling off the start
@@ -94,8 +96,12 @@ class LazyJsonReader(object):
         if len(lines_split) < 3:
             self.line = 0
             self.file.seek(0)
-            return json.loads(self.decode(lines_split[0]))
-        prev_line = lines_split[-3]
+            try:
+                return json.loads(self.decode(lines_split[0]))
+            except:
+                logging.info("Bad line: {}".format(self.decode(lines_split[0])))
+                pdb.set_trace()
+        prev_line = lines_split[-2]
 
         # Calculate how far backwards we jumped, seek to the beginning of the line we're returning
         # TODO should it be elsewhere so if next_line is called we dont get this line again?
@@ -103,7 +109,11 @@ class LazyJsonReader(object):
         rewound_len = len(b"\n".join([prev_line] + after_prev_line))
         self.file.seek(original_pos - rewound_len)
         self.line -= 1
-        return json.loads(self.decode(prev_line))
+        try:
+            return json.loads(self.decode(prev_line))
+        except:
+            logging.info("Bad line: {}".format(self.decode(prev_line)))
+            pdb.set_trace()
 
 def test():
     import pdb
@@ -111,13 +121,55 @@ def test():
 
     #reader = LazyJsonReader("./query_api_server.log.20160527t012105.gz", file_gzipped=True)
     #reader = LazyJsonReader("./query_api_server.log.20160527t012105")
+    reader = LazyJsonReader("./numbers.json")
     #reader = LazyJsonReader("./test.json.gz", file_gzipped=True)
-    reader = LazyJsonReader("./test.json")
+    #reader = LazyJsonReader("./test.json")
 
     #print(">>>", reader.read_next())
     #print(">>>", reader.read_prev())
 
+
+
+    # Read until EOF
+    line_count = 0 # should match our position in the file
+    lines_read = 0 # total count of lines read
+    lines_rev = 0 # total count of lines read in reverse
+    while True:
+        line = reader.read_next()
+        if line is None:
+            break
+        if line["number"] != line_count:
+            print("Skipped a line!")
+            pdb.set_trace()
+        line_count+=1
+        lines_read+=1
+
+    print("line_count: ", line_count)
+    print("lines_read: ", lines_read)
+    print("lines_rev:  ", lines_rev)
+    print("-------------")
+    #line_count-=1
+    # Read until BOF
+    while True:
+        line = reader.read_prev()
+        if line is None:
+            break
+        line_count-=1
+        if line["number"] != line_count:
+            print("Skipped a line!")
+            pdb.set_trace()
+        lines_rev +=1
+
+    print("line_count: ", line_count)
+    print("lines_read: ", lines_read)
+    print("lines_rev:  ", lines_rev)
+    # Counts much match
     pdb.set_trace()
+
+
+
+
+
 
     burn_lines = 5000
     last_line = None

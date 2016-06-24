@@ -185,6 +185,9 @@ class LazyFocusListWalker(urwid.SimpleFocusListWalker):
         self.parent = file_display
         self.async_loader = AsyncLineLoader(self)
 
+        self.last_add = True # True = added to top
+                             # False = added to bottom
+
         super(LazyFocusListWalker, self).__init__(initial_content)
 
     #def next_position(self, position):
@@ -196,53 +199,68 @@ class LazyFocusListWalker(urwid.SimpleFocusListWalker):
     #    return super(LazyFocusListWalker, self).prev_position(position)
 
     def insert_items(self):
+        load_more_thresh = 20
+
         count_above = self.focus
         count_below = len(self)-self.focus
         #logging.info("Total: {}, reader @ {}".format(len(self), self.parent.reader.line))
         # Add to bottom if needed
-        while count_below < self.parent.num_lines:
-            #logging.info("add to bottom")
-            # Seek to last item
-            self.parent.reader._seek_to(*self[-1]._original_widget.meta)
-            # Read next
-            next_item = self.parent.reader.read_next()
-            reader_position = self.parent.reader._get_position()
-            # Add next item to self
-            if next_item is not None:
-                self.append(
-                    self.parent.build_item(
-                        next_item,
-                        reader_position
+
+        if count_below + load_more_thresh < self.parent.num_lines:
+            while count_below < self.parent.num_lines:
+                #logging.info("add to bottom")
+                # Seek to last item
+                self.parent.reader._seek_to(*self[-1]._original_widget.meta)
+                # Read next
+                next_item = self.parent.reader.read_next()
+                self.last_add = False
+                reader_position = self.parent.reader._get_position()
+                # Add next item to self
+                if next_item is not None:
+                    self.append(
+                        self.parent.build_item(
+                            next_item,
+                            reader_position
+                        )
                     )
-                )
-                count_below = len(self)-self.focus
-            else:
-                break
+                    count_below = len(self)-self.focus
+                else:
+                    break
 
         # Add to top if needed
-        while self[0]._original_widget.meta[0] > 1 and count_above < self.parent.num_lines:
-            # Seek to first item
-            self.parent.reader._seek_to(*self[0]._original_widget.meta)
-            # Read prev
-            next_item = self.parent.reader.read_prev()
-            reader_position = self.parent.reader._get_position()
-            # Add next item to self
-            #logging.info(self.parent.reader.line)
-            if next_item is not None:
-                logging.info("did add to top")
-                logging.info(self[0]._original_widget.meta)
-                #import pdb ; pdb.set_trace()
-                self.insert(
-                    0,
-                    self.parent.build_item(
-                        next_item,
-                        reader_position
+        if self[0]._original_widget.meta[0] > 1 and count_above + load_more_thresh < self.parent.num_lines:
+            num_added = 0
+            while self[0]._original_widget.meta[0] > 1 and count_above < self.parent.num_lines:
+                # Seek to first item
+                seek_line, seek_pos = self[0]._original_widget.meta
+                self.parent.reader._seek_to(seek_line, seek_pos)
+                # Read prev
+                if not self.last_add:
+                    self.parent.reader.read_prev()
+                    # If the last read from the json was a next_line() we need to burn a line as the
+                    # prev item returned will be the same as the prior read_next()
+                next_item = self.parent.reader.read_prev()
+                self.last_add = True
+                reader_position = self.parent.reader._get_position()
+                # Add next item to self
+                #logging.info(self.parent.reader.line)
+                if next_item is not None:
+                    #logging.info("did add to top")
+                    #logging.info(self[0]._original_widget.meta)
+                    #import pdb ; pdb.set_trace()
+                    self.insert(
+                        0,
+                        self.parent.build_item(
+                            next_item,
+                            reader_position
+                        )
                     )
-                )
-                #position += 1
-                count_above = self.focus
-            else:
-                break
+                    num_added += 1
+                    #position += 1
+                    count_above = self.focus
+                else:
+                    break
+            #self.focus += num_added
 
     def set_focus(self, position):
         #logging.info("LazyFocusListWalker.set_focus: {}".format(position))
