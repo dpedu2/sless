@@ -3,7 +3,7 @@
 import logging
 logging.basicConfig(filename='test.log',level=logging.DEBUG)
 import urwid
-from lazyjson import LazyJsonReader
+from sless.lazyjson import LazyJsonReader
 from threading import Thread
 from time import sleep
 
@@ -156,13 +156,14 @@ class AsyncLineLoader(Thread):
     def __init__(self, parent):
         super(AsyncLineLoader, self).__init__()
         self.parent = parent
+        self.enabled = True
         self.start()
 
     def run(self):
         """
         Monitors when we need to read more items from disk and add to the top or bottom
         """
-        while True:
+        while self.enabled:
             sleep(0.1)
             self.parent.insert_items()
 
@@ -289,7 +290,8 @@ class JsonFileDisplay(urwid.ListBox):
                 self.build_item(next_ob, reader_position)
             )
 
-        super(JsonFileDisplay, self).__init__(LazyFocusListWalker(body, self))
+        self.walker = LazyFocusListWalker(body, self)
+        super(JsonFileDisplay, self).__init__(self.walker)
 
 
     def build_item(self, ob, meta):
@@ -338,6 +340,7 @@ class JsonReader(object):
 
     def unhandled(self, key):
         if key in ['f8', 'q']:
+            self.teardown()
             raise urwid.ExitMainLoop()
         elif key in ['f1', 'h']:
             pass # show help
@@ -351,7 +354,7 @@ class JsonReader(object):
             pass # reload file from disk (?)
 
     def teardown(self):
-        self.
+        self.main_display.walker.async_loader.enabled = False
 
     def run(self):
         try:
