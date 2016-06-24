@@ -273,8 +273,9 @@ class LazyFocusListWalker(urwid.SimpleFocusListWalker):
 
 
 class JsonFileDisplay(urwid.ListBox):
-    def __init__(self, json_file):
+    def __init__(self, json_file, preview_keys):
         self.reader = LazyJsonReader(json_file)
+        self.preview_keys = preview_keys
 
         # maximum number of loaded lines above AND below the cursor
         # TODO height of window / 2
@@ -296,15 +297,16 @@ class JsonFileDisplay(urwid.ListBox):
 
     def build_item(self, ob, meta):
         return urwid.AttrMap(
-                    JsonObject(ob, meta=meta, hidden=True),
+                    JsonObject(ob, meta=meta, hidden=True, preview_keys=self.preview_keys),
                     'json_row',
                     'json_row_h'
                 )
 
 
 class JsonReader(object):
-    def __init__(self, file_path):
+    def __init__(self, file_path, preview_keys=None):
         self.file_path = file_path
+        self.preview_keys = preview_keys if preview_keys else []
 
         palette = [
             ('I say', 'default,bold', 'default'),
@@ -330,7 +332,7 @@ class JsonReader(object):
 
         navColumns = urwid.AttrMap(_navColumns, 'header')
 
-        self.main_display = JsonFileDisplay(self.file_path)
+        self.main_display = JsonFileDisplay(self.file_path, self.preview_keys)
         mainFrame = urwid.Frame(self.main_display, header=navColumns, footer=None, focus_part='body')
 
         screen = urwid.raw_display.Screen()
@@ -365,11 +367,12 @@ class JsonReader(object):
 def main():
     import argparse
     parser = argparse.ArgumentParser(description="Graphical json structured log explorer")
+    parser.add_argument('-p', '--preview-keys', type=lambda x: x.split(","), default=['_t', 'severity', 'event_name', '__time__'])
     parser.add_argument('file_path', nargs=1, help="File path to view")
 
     args = parser.parse_args()
 
-    reader = JsonReader(args.file_path[0])
+    reader = JsonReader(args.file_path[0], preview_keys=args.preview_keys)
     reader.run()
 
 
