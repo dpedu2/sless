@@ -47,11 +47,7 @@ class LazyJsonReader(object):
         data = self.file.readline().strip()
         if data:
             self.line += 1
-        try:
-            return json.loads(self.decode(data)) if data else None
-        except:
-            logging.info("Bad line: {}".format(data))
-            pdb.set_trace()
+        return json.loads(self.decode(data)) if data else None
 
     def read_prev(self):
         """
@@ -96,11 +92,7 @@ class LazyJsonReader(object):
         if len(lines_split) < 3:
             self.line = 0
             self.file.seek(0)
-            try:
-                return json.loads(self.decode(lines_split[0]))
-            except:
-                logging.info("Bad line: {}".format(self.decode(lines_split[0])))
-                pdb.set_trace()
+            return json.loads(self.decode(lines_split[0]))
         prev_line = lines_split[-2]
 
         # Calculate how far backwards we jumped, seek to the beginning of the line we're returning
@@ -109,93 +101,5 @@ class LazyJsonReader(object):
         rewound_len = len(b"\n".join([prev_line] + after_prev_line))
         self.file.seek(original_pos - rewound_len)
         self.line -= 1
-        try:
-            return json.loads(self.decode(prev_line))
-        except:
-            logging.info("Bad line: {}".format(self.decode(prev_line)))
-            pdb.set_trace()
 
-def test():
-    import pdb
-    from time import time
-
-    #reader = LazyJsonReader("./query_api_server.log.20160527t012105.gz", file_gzipped=True)
-    #reader = LazyJsonReader("./query_api_server.log.20160527t012105")
-    reader = LazyJsonReader("./numbers.json")
-    #reader = LazyJsonReader("./test.json.gz", file_gzipped=True)
-    #reader = LazyJsonReader("./test.json")
-
-    #print(">>>", reader.read_next())
-    #print(">>>", reader.read_prev())
-
-
-
-    # Read until EOF
-    line_count = 0 # should match our position in the file
-    lines_read = 0 # total count of lines read
-    lines_rev = 0 # total count of lines read in reverse
-    while True:
-        line = reader.read_next()
-        if line is None:
-            break
-        if line["number"] != line_count:
-            print("Skipped a line!")
-            pdb.set_trace()
-        line_count+=1
-        lines_read+=1
-
-    print("line_count: ", line_count)
-    print("lines_read: ", lines_read)
-    print("lines_rev:  ", lines_rev)
-    print("-------------")
-    #line_count-=1
-    # Read until BOF
-    while True:
-        line = reader.read_prev()
-        if line is None:
-            break
-        line_count-=1
-        if line["number"] != line_count:
-            print("Skipped a line!")
-            pdb.set_trace()
-        lines_rev +=1
-
-    print("line_count: ", line_count)
-    print("lines_read: ", lines_read)
-    print("lines_rev:  ", lines_rev)
-    # Counts much match
-    pdb.set_trace()
-
-
-
-
-
-
-    burn_lines = 5000
-    last_line = None
-    start = time()
-    for i in range(0, burn_lines):
-        last_line = reader.read_next()
-        #print(last_line)
-    end = time()
-
-    print("Burned {} lines in {}".format(burn_lines, round(end-start, 2)))
-
-    print("Line:", reader.line, "Pos:", reader.file.tell())
-
-    #print(reader.read_prev())
-
-    start = time()
-    while True:
-        x = reader.read_prev()
-        #print(x)
-        if x == None:
-            break
-    end = time()
-    print("Unburned {} lines in {}".format(burn_lines, round(end-start, 2)))
-
-    pdb.set_trace()
-
-if __name__ == '__main__':
-    test()
-
+        return json.loads(self.decode(prev_line))

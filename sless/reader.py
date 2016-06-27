@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
-import logging
-logging.basicConfig(filename='test.log',level=logging.DEBUG)
+#import logging
+#logging.basicConfig(filename='test.log',level=logging.DEBUG)
 import urwid
 from sless.lazyjson import LazyJsonReader
 from threading import Thread
