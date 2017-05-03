@@ -1,7 +1,10 @@
 try:
-    import ujson as json
+    import rapidjson as json
 except:
-    import json
+    try:
+        import ujson as json
+    except:
+        import json
 from gzip import GzipFile
 import pdb
 import logging

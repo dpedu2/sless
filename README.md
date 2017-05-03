@@ -18,7 +18,7 @@ Requirements
 
 Python 3 and `urwid` module.
 
-Having the `ujson` module - a faster version of the native json module - is recommended but not required.
+Having the `rapidjson` module - a faster version of the native json module - is recommended but not required. Alternatively, `ujson` will also be preferred over the built-in json module.
 
 Customize
 ---------
